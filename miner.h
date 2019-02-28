@@ -249,6 +249,8 @@ int scanhash_timetravel(int thr_id, struct work *work, uint32_t max_nonce, uint6
 int scanhash_bitcore(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_tribus(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_veltor(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
+int scanhash_wildkeccak2(int thr_id, uint32_t *pdata, const uint32_t *ptarget,
+						uint32_t max_nonce, unsigned long *hashes_done);
 int scanhash_x11evo(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_x11(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_x12(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
@@ -296,6 +298,16 @@ struct work_restart {
 	volatile uint8_t restart;
 	char padding[128 - sizeof(uint8_t)];
 };
+
+#define WILD_KECCAK_SCRATCHPAD_BUFFSIZE  (1024*1024*1024)
+
+struct  __attribute__((__packed__)) scratchpad_hi
+{
+	unsigned char prevhash[32];
+	uint64_t height;
+};
+
+#define WILD_KECCAK_ADDENDUMS_ARRAY_SIZE  10
 
 extern bool opt_debug;
 extern bool opt_benchmark;
@@ -397,6 +409,7 @@ float cpu_temp(int core);
 struct work {
 	uint32_t data[48];
 	uint32_t target[8];
+	uint32_t job_len;
 
 	double targetdiff;
 	double shareratio;
@@ -544,6 +557,7 @@ void timetravel_hash(void *output, const void *input);
 void bitcore_hash(void *output, const void *input);
 void tribus_hash(void *output, const void *input);
 void veltor_hash(void *output, const void *input);
+void wild_keccak2_hash_dbl_use_global_scratch(const uint8_t *in, size_t inlen, uint8_t *md);
 void xevan_hash(void *output, const void *input);
 void x11evo_hash(void *output, const void *input);
 void x11hash(void *output, const void *input);

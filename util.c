@@ -1637,6 +1637,7 @@ bool rpc2_job_decode(const json_t *job, struct work *work)
 			goto err_out;
 		}
 		memcpy(work->data, rpc2_blob, rpc2_bloblen);
+		work->job_len = rpc2_bloblen;
 		memset(work->target, 0xff, sizeof(work->target));
 		work->target[7] = rpc2_target;
 		if (work->job_id) free(work->job_id);
@@ -2471,6 +2472,9 @@ void print_hash_tests(void)
 
 	veltor_hash(&hash[0], &buf[0]);
 	printpfx("veltor", hash);
+
+	wild_keccak2_hash_dbl_use_global_scratch(&buf[0], 192, &hash[0]);
+	printpfx("wild-keccak2", hash);
 
 	xevan_hash(&hash[0], &buf[0]);
 	printpfx("xevan", hash);
