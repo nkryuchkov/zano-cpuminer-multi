@@ -127,6 +127,7 @@ enum algos {
 	ALGO_TRIBUS,      /* Denarius jh/keccak/echo */
 	ALGO_VANILLA,     /* Vanilla (Blake256 8-rounds - double sha256) */
 	ALGO_VELTOR,      /* Skein Shavite Shabal Streebog */
+	ALGO_WILDKECCAK2, /* Wild Keccak 2 (Zano) */
 	ALGO_X11EVO,      /* Permuted X11 */
 	ALGO_X11,         /* X11 */
 	ALGO_X12,
@@ -194,6 +195,7 @@ static const char *algo_names[] = {
 	"tribus",
 	"vanilla",
 	"veltor",
+	"wildkeccak2",
 	"x11evo",
 	"x11",
 	"x12",
@@ -236,7 +238,7 @@ static int opt_fail_pause = 10;
 static int opt_time_limit = 0;
 int opt_timeout = 300;
 static int opt_scantime = 5;
-static enum algos opt_algo = ALGO_SCRYPT;
+static enum algos opt_algo = ALGO_WILDKECCAK2;
 static int opt_scrypt_n = 1024;
 static int opt_pluck_n = 128;
 static unsigned int opt_nfactor = 6;
@@ -291,10 +293,27 @@ double opt_max_temp = 0.0;
 double opt_max_diff = 0.0;
 double opt_max_rate = 0.0;
 
-uint32_t opt_work_size = 0; /* default */
+uint32_t opt_work_size =  (1 << 18); /* default */
 char *opt_api_allow = NULL;
 int opt_api_remote = 0;
 int opt_api_listen = 4048; /* 0 to disable */
+
+uint64_t* pscratchpad_buff = NULL;
+volatile uint64_t  scratchpad_size = 0;
+static char scratchpad_file[PATH_MAX];
+static const char cachedir_suffix[] = "zano"; /* scratchpad cache saved as ~/.cache/zano/scratchpad.bin */
+
+//struct __attribute__((__packed__)) scratchpad_file_header
+//{
+//	struct scratchpad_hi current_hi;
+//	struct addendums_array_entry add_arr[WILD_KECCAK_ADDENDUMS_ARRAY_SIZE];
+//	uint64_t scratchpad_size;
+//};
+
+static char last_found_nonce[200];
+static time_t prev_save = 0;
+static const char * pscratchpad_url = NULL;
+static const char * pscratchpad_local_cache = NULL;
 
 #ifdef HAVE_GETOPT_LONG
 #include <getopt.h>
@@ -358,6 +377,7 @@ Options:\n\
                           s3           S3\n\
                           timetravel   Timetravel (Machinecoin)\n\
                           vanilla      Blake-256 8-rounds\n\
+                          wildkeccak2  Wild Keccak 2\n\
                           x11evo       Permuted x11\n\
                           x11          X11\n\
                           x12          X12\n\
@@ -1144,6 +1164,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				break;
 			case ALGO_CRYPTONIGHT:
 				cryptonight_hash(hash, work->data);
+			case ALGO_WILDKECCAK2:
+				wild_keccak2_hash_dbl_use_global_scratch((uint8_t*)work->data, work->job_len, (uint8_t*)hash);
 			default:
 				break;
 			}
@@ -1278,6 +1300,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				break;
 			case ALGO_CRYPTONIGHT:
 				cryptonight_hash(hash, work->data);
+			case ALGO_WILDKECCAK2:
+				wild_keccak2_hash_dbl_use_global_scratch((uint8_t*)work->data, work->job_len, (uint8_t*)hash);
 			default:
 				break;
 			}
@@ -1847,6 +1871,7 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 			case ALGO_NEOSCRYPT:
 			case ALGO_PLUCK:
 			case ALGO_YESCRYPT:
+			case ALGO_WILDKECCAK2:
 				work_set_target(work, sctx->job.diff / (65536.0 * opt_diff_factor));
 				break;
 			case ALGO_ALLIUM:
@@ -2235,6 +2260,9 @@ static void *miner_thread(void *userdata)
 			case ALGO_VANILLA:
 				max64 = 0x3fffffLL;
 				break;
+			case ALGO_WILDKECCAK2:
+				max64 /= opt_work_size;
+				max64 = (max64 == 0 ? 1 : max64) * opt_work_size;
 			case ALGO_SIA:
 			default:
 				max64 = 0x1fffffLL;
@@ -2401,6 +2429,9 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_VELTOR:
 			rc = scanhash_veltor(thr_id, &work, max_nonce, &hashes_done);
+			break;
+		case ALGO_WILDKECCAK2:
+			rc = scanhash_wildkeccak2(thr_id, work.data, work.target, max_nonce, &hashes_done);
 			break;
 		case ALGO_X11EVO:
 			rc = scanhash_x11evo(thr_id, &work, max_nonce, &hashes_done);
@@ -2970,6 +3001,8 @@ void parse_arg(int key, char *arg)
 				i = opt_algo = ALGO_SIB;
 			else if (!strcasecmp("timetravel10", arg))
 				i = opt_algo = ALGO_BITCORE;
+			else if (!strcasecmp("wildkeccak2", arg))
+				i = opt_algo = ALGO_WILDKECCAK2;
 			else if (!strcasecmp("ziftr", arg))
 				i = opt_algo = ALGO_ZR5;
 			else
@@ -3464,7 +3497,7 @@ int main(int argc, char *argv[]) {
 
 	if (opt_algo == ALGO_QUARK) {
 		init_quarkhash_contexts();
-	} else if(opt_algo == ALGO_CRYPTONIGHT || opt_algo == ALGO_CRYPTOLIGHT) {
+	} else if(opt_algo == ALGO_CRYPTONIGHT || opt_algo == ALGO_CRYPTOLIGHT || opt_algo == ALGO_WILDKECCAK2) {
 		jsonrpc_2 = true;
 		opt_extranonce = false;
 		aes_ni_supported = has_aes_ni();

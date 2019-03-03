@@ -8,7 +8,8 @@ RUN		apt-get update -qq
 
 RUN		apt-get install -qy automake autoconf pkg-config libcurl4-openssl-dev libssl-dev libjansson-dev libgmp-dev make g++ git
 
-RUN		git clone https://github.com/tpruvot/cpuminer-multi -b linux
+# RUN		git clone https://github.com/tpruvot/cpuminer-multi -b linux
+ADD . /cpuminer-multi
 
 RUN		cd cpuminer-multi && ./build.sh
 
