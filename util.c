@@ -293,7 +293,7 @@ static size_t all_data_cb(const void *ptr, size_t size, size_t nmemb,
 }
 
 static size_t upload_data_cb(void *ptr, size_t size, size_t nmemb,
-			     void *user_data)
+                 void *user_data)
 {
 	struct upload_buffer *ub = (struct upload_buffer *) user_data;
 	size_t len = size * nmemb;
@@ -313,7 +313,7 @@ static size_t upload_data_cb(void *ptr, size_t size, size_t nmemb,
 static int seek_data_cb(void *user_data, curl_off_t offset, int origin)
 {
 	struct upload_buffer *ub = (struct upload_buffer *) user_data;
-	
+
 	switch (origin) {
 	case SEEK_SET:
 		ub->pos = (size_t) offset;
@@ -433,7 +433,7 @@ static int sockopt_keepalive_cb(void *userdata, curl_socket_t fd,
 #endif
 
 json_t *json_rpc_call(CURL *curl, const char *url,
-		      const char *userpass, const char *rpc_req,
+              const char *userpass, const char *rpc_req,
 		      int *curl_err, int flags)
 {
 	json_t *val, *err_val, *res_val;
@@ -859,7 +859,7 @@ size_t address_to_script(unsigned char *out, size_t outsz, const char *addr)
    storing the result in RESULT.
    Return 1 if the difference is negative, otherwise 0.  */
 int timeval_subtract(struct timeval *result, struct timeval *x,
-	struct timeval *y)
+					 struct timeval *y)
 {
 	/* Perform the carry for the later subtraction by updating Y. */
 	if (x->tv_usec < y->tv_usec) {
@@ -886,7 +886,7 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 {
 	int i;
 	bool rc = true;
-	
+
 	for (i = 7; i >= 0; i--) {
 		if (hash[i] > target[i]) {
 			rc = false;
@@ -901,7 +901,7 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 	if (opt_debug) {
 		uint32_t hash_be[8], target_be[8];
 		char hash_str[65], target_str[65];
-		
+
 		for (i = 0; i < 8; i++) {
 			be32enc(hash_be + i, hash[7 - i]);
 			be32enc(target_be + i, target[7 - i]);
@@ -923,7 +923,7 @@ void diff_to_target(uint32_t *target, double diff)
 {
 	uint64_t m;
 	int k;
-	
+
 	for (k = 6; k > 0 && diff > 1.0; k--)
 		diff /= 4294967296.0;
 	m = (uint64_t)(4294901760.0 / diff);
@@ -1456,6 +1456,7 @@ out:
 
 extern pthread_mutex_t rpc2_login_lock;
 extern pthread_mutex_t rpc2_job_lock;
+extern pthread_mutex_t rpc2_scratchpad_lock;
 
 bool rpc2_login_decode(const json_t *val)
 {
@@ -1631,12 +1632,82 @@ bool rpc2_job_decode(const json_t *job, struct work *work)
 		rpc2_job_id = strdup(job_id);
 		pthread_mutex_unlock(&rpc2_job_lock);
 	}
+
+	tmp = json_object_get(job, "height");
+	if (!tmp) {
+		applog(LOG_ERR, "JSON invalid height");
+		goto err_out;
+	}
+
+	bool check_scratchpad = false;
+	int height = (int) json_integer_value(tmp);
+
+	pthread_mutex_lock(&rpc2_job_lock);
+	pthread_mutex_lock(&rpc2_scratchpad_lock);
+
+	if (rpc2_height != height || !pscratchpad_buff) {
+		check_scratchpad = true;
+		rpc2_height = height;
+	}
+
+	pthread_mutex_unlock(&rpc2_scratchpad_lock);
+	pthread_mutex_unlock(&rpc2_job_lock);
+
+	if (check_scratchpad) {
+		tmp = json_object_get(job, "seed");
+		if (!tmp) {
+			applog(LOG_ERR, "JSON invalid seed");
+			goto err_out;
+		}
+		const char *hexseed = json_string_value(tmp);
+		applog(LOG_DEBUG, "hex seed: %s", hexseed);
+		size_t seedLen = strlen(hexseed);
+		if (seedLen % 2 != 0) {
+			applog(LOG_ERR, "JSON invalid seed length");
+			goto err_out;
+		}
+		if (seedLen != 0) {
+			pthread_mutex_lock(&rpc2_job_lock);
+			uchar *seed = (uchar *) malloc(seedLen / 2);
+			if (!hex2bin(seed, hexseed, seedLen / 2)) {
+				applog(LOG_ERR, "JSON invalid seed");
+				pthread_mutex_unlock(&rpc2_job_lock);
+				goto err_out;
+			}
+			size_t old_seedlen = rpc2_seedlen;
+
+			if (old_seedlen != seedLen / 2 || memcmp(rpc2_seed, seed, seedLen / 2)) {
+				applog(LOG_DEBUG, "updating seed");
+
+				rpc2_seedlen = seedLen / 2;
+				if (rpc2_seed) free(rpc2_seed);
+				rpc2_seed = (char *) malloc(rpc2_seedlen);
+				if (!rpc2_seed) {
+					applog(LOG_ERR, "RPC2 OOM!");
+					goto err_out;
+				}
+
+				memcpy(rpc2_seed, seed, seedLen / 2);
+
+				pthread_mutex_lock(&rpc2_scratchpad_lock);
+				applog(LOG_DEBUG, "generating scratchpad");
+				if (!wildkeccak2_generate_scratchpad(rpc2_seed, height)) {
+					applog(LOG_ERR, "error generating scratchpad");
+				}
+				pthread_mutex_unlock(&rpc2_scratchpad_lock);
+			}
+			free(seed);
+			pthread_mutex_unlock(&rpc2_job_lock);
+		}
+	}
+
 	if(work) {
 		if (!rpc2_blob) {
 			applog(LOG_WARNING, "Work requested before it was received");
 			goto err_out;
 		}
 		memcpy(work->data, rpc2_blob, rpc2_bloblen);
+		work->job_len = rpc2_bloblen;
 		memset(work->target, 0xff, sizeof(work->target));
 		work->target[7] = rpc2_target;
 		if (work->job_id) free(work->job_id);
@@ -2027,7 +2098,7 @@ static bool stratum_get_version(struct stratum_ctx *sctx, json_t *id)
 	char *s;
 	json_t *val;
 	bool ret;
-	
+
 	if (!id || json_is_null(id))
 		return false;
 
@@ -2052,7 +2123,7 @@ static bool stratum_show_message(struct stratum_ctx *sctx, json_t *id, json_t *p
 	val = json_array_get(params, 0);
 	if (val)
 		applog(LOG_NOTICE, "MESSAGE FROM SERVER: %s", json_string_value(val));
-	
+
 	if (!id || json_is_null(id))
 		return true;
 
@@ -2472,6 +2543,9 @@ void print_hash_tests(void)
 	veltor_hash(&hash[0], &buf[0]);
 	printpfx("veltor", hash);
 
+	wild_keccak2_hash(&hash[0], &buf[0], 192);
+	printpfx("wild-keccak2", hash);
+
 	xevan_hash(&hash[0], &buf[0]);
 	printpfx("xevan", hash);
 
@@ -2517,4 +2591,3 @@ void print_hash_tests(void)
 
 	free(scratchbuf);
 }
-

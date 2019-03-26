@@ -115,7 +115,7 @@ static inline uint32_t be32dec(const void *pp)
 {
 	const uint8_t *p = (uint8_t const *)pp;
 	return ((uint32_t)(p[3]) + ((uint32_t)(p[2]) << 8) +
-	    ((uint32_t)(p[1]) << 16) + ((uint32_t)(p[0]) << 24));
+			((uint32_t)(p[1]) << 16) + ((uint32_t)(p[0]) << 24));
 }
 #endif
 
@@ -124,7 +124,7 @@ static inline uint32_t le32dec(const void *pp)
 {
 	const uint8_t *p = (uint8_t const *)pp;
 	return ((uint32_t)(p[0]) + ((uint32_t)(p[1]) << 8) +
-	    ((uint32_t)(p[2]) << 16) + ((uint32_t)(p[3]) << 24));
+			((uint32_t)(p[2]) << 16) + ((uint32_t)(p[3]) << 24));
 }
 #endif
 
@@ -229,7 +229,7 @@ int scanhash_pentablake(int thr_id, struct work *work, uint32_t max_nonce, uint6
 int scanhash_phi1612(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_phi2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_pluck(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done,
-					unsigned char *scratchbuf, int N);
+				   unsigned char *scratchbuf, int N);
 int scanhash_quark(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 void init_quarkhash_contexts();
 int scanhash_qubit(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
@@ -249,6 +249,14 @@ int scanhash_timetravel(int thr_id, struct work *work, uint32_t max_nonce, uint6
 int scanhash_bitcore(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_tribus(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_veltor(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
+#ifdef __cplusplus
+extern "C" {
+#endif
+int scanhash_wildkeccak2(int thr_id, struct work *work, uint32_t max_nonce, unsigned long *hashes_done);
+bool wildkeccak2_generate_scratchpad(const char *seed_data, uint64_t height);
+#ifdef __cplusplus
+}
+#endif
 int scanhash_x11evo(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_x11(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_x12(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
@@ -296,6 +304,16 @@ struct work_restart {
 	volatile uint8_t restart;
 	char padding[128 - sizeof(uint8_t)];
 };
+
+#define WILD_KECCAK_SCRATCHPAD_BUFFSIZE  (1024*1024*1024)
+
+struct  __attribute__((__packed__)) scratchpad_hi
+{
+	unsigned char prevhash[32];
+	uint64_t height;
+};
+
+#define WILD_KECCAK_ADDENDUMS_ARRAY_SIZE  10
 
 extern bool opt_debug;
 extern bool opt_benchmark;
@@ -372,7 +390,7 @@ extern double net_hashrate;
 void applog(int prio, const char *fmt, ...);
 void restart_threads(void);
 extern json_t *json_rpc_call(CURL *curl, const char *url, const char *userpass,
-	const char *rpc_req, int *curl_err, int flags);
+							 const char *rpc_req, int *curl_err, int flags);
 void bin2hex(char *s, const unsigned char *p, size_t len);
 char *abin2hex(const unsigned char *p, size_t len);
 bool hex2bin(unsigned char *p, const char *hexstr, size_t len);
@@ -397,6 +415,7 @@ float cpu_temp(int core);
 struct work {
 	uint32_t data[48];
 	uint32_t target[8];
+	uint32_t job_len;
 
 	double targetdiff;
 	double shareratio;
@@ -468,8 +487,14 @@ extern bool aes_ni_supported;
 extern char rpc2_id[64];
 extern char *rpc2_blob;
 extern size_t rpc2_bloblen;
+extern int rpc2_height;
+extern char *rpc2_seed;
+extern size_t rpc2_seedlen;
 extern uint32_t rpc2_target;
 extern char *rpc2_job_id;
+
+extern char *pscratchpad_buff;
+extern uint64_t scratchpad_size;
 
 json_t *json_rpc2_call(CURL *curl, const char *url, const char *userpass, const char *rpc_req, int *curl_err, int flags);
 bool rpc2_login(CURL *curl);
@@ -544,6 +569,13 @@ void timetravel_hash(void *output, const void *input);
 void bitcore_hash(void *output, const void *input);
 void tribus_hash(void *output, const void *input);
 void veltor_hash(void *output, const void *input);
+#ifdef __cplusplus
+extern "C" {
+#endif
+void wild_keccak2_hash(char *output, const char *input, uint32_t inlen);
+#ifdef __cplusplus
+}
+#endif
 void xevan_hash(void *output, const void *input);
 void x11evo_hash(void *output, const void *input);
 void x11hash(void *output, const void *input);

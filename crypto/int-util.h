@@ -3,32 +3,18 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #pragma once
-#ifndef INT_UTILS_H_
-#define INT_UTILS_H_
 
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#ifndef _MSC_VER
 #include <sys/param.h>
-#else
-#define inline __inline
-#endif
 
-#ifndef LITTLE_ENDIAN
-#define LITTLE_ENDIAN 0x1234
-#define BIG_ENDIAN 0x4321
-#endif
-
-#if !defined(BYTE_ORDER) && (defined(__LITTLE_ENDIAN__) || defined(__arm__) || defined(WIN32))
-#define BYTE_ORDER LITTLE_ENDIAN
-#endif
-
-#if defined(WIN32)
+#if defined(_MSC_VER)
 #include <stdlib.h>
 
 static inline uint32_t rol32(uint32_t x, int r) {
+  static_assert(sizeof(uint32_t) == sizeof(unsigned int), "this code assumes 32-bit integers");
   return _rotl(x, r);
 }
 
@@ -191,5 +177,3 @@ static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not e
 #define memcpy_swap64be memcpy_ident64
 #define memcpy_swap64le memcpy_swap64
 #endif
-
-#endif /* INT_UTILS_H_ */
